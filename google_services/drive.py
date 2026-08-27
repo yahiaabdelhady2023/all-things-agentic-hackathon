@@ -1,7 +1,7 @@
 import io
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 from googleapiclient.http import MediaFileUpload
-from __setup import validate_user_and_build_service
+from google_services.setup import validate_user_and_build_service
 
 # The scope required for full read/write/delete access to Google Drive
 SCOPES = ['https://www.googleapis.com/auth/drive']

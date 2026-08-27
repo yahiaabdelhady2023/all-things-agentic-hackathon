@@ -6,7 +6,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from __setup import validate_user_and_build_service
+from google_services.setup import validate_user_and_build_service
 
 import datetime
 

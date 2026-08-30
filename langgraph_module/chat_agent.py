@@ -14,7 +14,7 @@ load_dotenv()
 ################################################################
 
 # Fixed model name to a valid Gemini model
-llm = init_chat_model(model="gemini-3.1-flash-lite", model_provider="google_genai")
+llm = init_chat_model(model="gemini-3.5-flash"", model_provider="google_genai")
 
 ################################################################
 # 2. State                                                      #

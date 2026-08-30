@@ -4,11 +4,14 @@ from google_services.setup import validate_user_and_build_service
 import os
 from typing import Optional
 
+import os
+
 # The scope required for full read/write/delete access to Gmail
 SCOPES = ['https://mail.google.com/']
 SERVICE_NAME = 'gmail'
 VERSION = 'v1'
-SERVICE_TOKEN = 'gmail_token.json' 
+_CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+SERVICE_TOKEN = os.path.join(_CURRENT_DIR, 'gmail_token.json') 
 
 
 def has_attachments(payload):

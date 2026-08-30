@@ -1,5 +1,6 @@
 import io
 from typing import Optional
+import os
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 from googleapiclient.http import MediaFileUpload
 from google_services.setup import validate_user_and_build_service
@@ -8,7 +9,8 @@ from google_services.setup import validate_user_and_build_service
 SCOPES = ['https://www.googleapis.com/auth/drive']
 SERVICE_NAME = 'drive'
 VERSION = 'v3'
-SERVICE_TOKEN = 'drive_token.json'
+_CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+SERVICE_TOKEN = os.path.join(_CURRENT_DIR, 'drive_token.json')
 
 def read_drive(query: Optional[str] = None):
     service = validate_user_and_build_service(SERVICE_NAME, SERVICE_TOKEN, SCOPES, VERSION)
@@ -78,14 +80,17 @@ def create_drive_file(file_path, file_name, mime_type, parent_id=None):
     # Media body contains the actual file from your local system
     media = MediaFileUpload(file_path, mimetype=mime_type)
     
-    file = service.files().create(
-        body=file_metadata, 
-        media_body=media, 
-        fields='id'
-    ).execute()
-    
-    print(f"File created with ID: {file.get('id')}")
-    return file
+    try:
+        file = service.files().create(
+            body=file_metadata, 
+            media_body=media, 
+            fields='id, name, webViewLink, mimeType'
+        ).execute()
+        
+        return file
+    except Exception as e:
+        print(f"   ✗ Error uploading file {file_name}: {e}")
+        return None
 
 
 def create_drive_folder(folder_name, parent_id=None):
@@ -96,9 +101,13 @@ def create_drive_folder(folder_name, parent_id=None):
     }
     if parent_id:
         file_metadata['parents'] = [parent_id]
-    folder = service.files().create(body=file_metadata, fields='id, name, webViewLink').execute()
-    print(f"Drive folder created: {folder.get('name')} ({folder.get('id')})")
-    return folder
+    
+    try:
+        folder = service.files().create(body=file_metadata, fields='id, name, webViewLink').execute()
+        return folder
+    except Exception as e:
+        print(f"   ✗ Error creating folder {folder_name}: {e}")
+        return {}
 
 def edit_drive_file(file_id, new_name):
     service = validate_user_and_build_service(SERVICE_NAME, SERVICE_TOKEN, SCOPES, VERSION)

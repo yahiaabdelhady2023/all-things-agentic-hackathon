@@ -1,4 +1,5 @@
 import datetime
+import os
 import os.path
 
 from google.auth.transport.requests import Request
@@ -8,13 +9,12 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from google_services.setup import validate_user_and_build_service
 
-import datetime
-
 # The scope required for full read/write access to the user's calendar
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 SERVICE_NAME = 'calendar'
 VERSION = 'v3'
-SERVICE_TOKEN = 'calendar_token.json' # Assuming this is how you pass your credentials
+_CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+SERVICE_TOKEN = os.path.join(_CURRENT_DIR, 'calendar_token.json') # Assuming this is how you pass your credentials
 
 def read_calender():
     service = validate_user_and_build_service(SERVICE_NAME, SERVICE_TOKEN, SCOPES, VERSION)
@@ -59,12 +59,13 @@ def create_task_calender(summary, start_time, end_time, description="", event_id
         },
     }
 
-    request = service.events().insert(calendarId='primary', body=event_body)
-    if event_id:
-        request = service.events().insert(calendarId='primary', eventId=event_id, body=event_body)
-    event = request.execute()
-    print(f"Event created: {event.get('htmlLink')}")
-    return event
+    try:
+        request = service.events().insert(calendarId='primary', body=event_body)
+        event = request.execute()
+        return event
+    except Exception as e:
+        print(f"   ✗ Error creating calendar event: {e}")
+        return None
 
 def edit_task_calender(event_id, updated_summary=None, updated_description=None):
     service = validate_user_and_build_service(SERVICE_NAME, SERVICE_TOKEN, SCOPES, VERSION)

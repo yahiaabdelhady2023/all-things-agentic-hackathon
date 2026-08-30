@@ -42,7 +42,7 @@ def read_calender():
             
     return events
 
-def create_task_calender(summary, start_time, end_time, description=""):
+def create_task_calender(summary, start_time, end_time, description="", event_id=None):
     service = validate_user_and_build_service(SERVICE_NAME, SERVICE_TOKEN, SCOPES, VERSION)
     
     # Construct the event body
@@ -59,7 +59,10 @@ def create_task_calender(summary, start_time, end_time, description=""):
         },
     }
 
-    event = service.events().insert(calendarId='primary', body=event_body).execute()
+    request = service.events().insert(calendarId='primary', body=event_body)
+    if event_id:
+        request = service.events().insert(calendarId='primary', eventId=event_id, body=event_body)
+    event = request.execute()
     print(f"Event created: {event.get('htmlLink')}")
     return event
 

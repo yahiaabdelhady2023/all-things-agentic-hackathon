@@ -2,6 +2,7 @@ import base64
 from email.message import EmailMessage
 from google_services.setup import validate_user_and_build_service
 import os
+from typing import Optional
 
 # The scope required for full read/write/delete access to Gmail
 SCOPES = ['https://mail.google.com/']
@@ -56,13 +57,40 @@ def get_email_body(payload):
     return "No plain text body found."
 
 
-def read_gmail() -> list[dict]:
+def extract_attachments(payload):
+    """Return every downloadable attachment in a message payload."""
+    attachments = []
+    filename = payload.get('filename')
+    attachment_id = payload.get('body', {}).get('attachmentId')
+    if filename and attachment_id:
+        attachments.append({
+            'attachment_id': str(attachment_id),
+            'filename': filename,
+            'mime_type': payload.get('mimeType', 'application/octet-stream'),
+        })
+
+    for part in payload.get('parts', []):
+        attachments.extend(extract_attachments(part))
+    return attachments
+
+
+def read_gmail(query: Optional[str] = None) -> list[dict]:
     service = validate_user_and_build_service(SERVICE_NAME, SERVICE_TOKEN, SCOPES, VERSION)
-    
-    print('Fetching the latest 5 emails...')
-    # userId='me' is a special value indicating the authenticated user
-    results = service.users().messages().list(userId='me', maxResults=5).execute()
-    messages = results.get('messages', [])
+
+    print(f"Fetching Gmail messages{f' matching {query!r}' if query else ''}...")
+    messages = []
+    page_token = None
+    while True:
+        request = service.users().messages().list(
+            userId='me',
+            q=query or None,
+            pageToken=page_token,
+        )
+        results = request.execute()
+        messages.extend(results.get('messages', []))
+        page_token = results.get('nextPageToken')
+        if not page_token:
+            break
 
     messages_list = []
     if not messages:
@@ -86,43 +114,31 @@ def read_gmail() -> list[dict]:
                  if header.get('name', '').lower() == 'date'),
                 'Unknown Date'
             )
+            sender = next(
+                (header['value'] for header in headers
+                 if header.get('name', '').lower() == 'from'),
+                'Unknown Sender'
+            )
             
             payload = msg_data.get('payload', {})   
             email_has_attachment = has_attachments(payload)
             email_body = get_email_body(payload)
             
-            # --- NEW LOGIC: Extract Attachment IDs and Filenames ---
-            attachment_ids = []
-            attachment_filenames = []
-            
-            def extract_attachments(part):
-                filename = part.get('filename')
-                attachment_id = part.get('body', {}).get('attachmentId')
-                
-                # If both exist, this part is an attachment
-                if filename and attachment_id:
-                    attachment_filenames.append(filename)
-                    attachment_ids.append(attachment_id)
-                    
-                # Recursively check nested parts (common in multipart emails)
-                if 'parts' in part:
-                    for subpart in part['parts']:
-                        extract_attachments(subpart)
-            
-            # Run the extraction on the main payload
-            extract_attachments(payload)
-            # -------------------------------------------------------
+            attachments = extract_attachments(payload)
             
             print(f"Message Snippet: {msg_data.get('snippet')}")
             messages_list.append({
-                "id": msg["id"],
+                "id": str(msg_data["id"]),
+                "email_id": str(msg_data["id"]),
                 "email_title": email_title,
                 "email_date": email_date,
                 "email_snippet": msg_data.get('snippet'),
                 "has_attachment": email_has_attachment,
+                "sender": sender,
                 "email_body": email_body,
-                "attachment_ids": attachment_ids,                 # Added to dict
-                "attachment_filenames": attachment_filenames      # Added to dict
+                "attachments": attachments,
+                "attachment_ids": [item['attachment_id'] for item in attachments],
+                "attachment_filenames": [item['filename'] for item in attachments],
             })
             
     return messages_list

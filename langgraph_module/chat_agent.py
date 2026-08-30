@@ -14,7 +14,7 @@ load_dotenv()
 ################################################################
 
 # Fixed model name to a valid Gemini model
-llm = init_chat_model(model="gemini-2.5-flash", model_provider="google_genai")
+llm = init_chat_model(model="gemini-3.1-flash-lite", model_provider="google_genai")
 
 ################################################################
 # 2. State                                                      #
@@ -23,6 +23,7 @@ llm = init_chat_model(model="gemini-2.5-flash", model_provider="google_genai")
 class State(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     user_request: str
+    email_query: str
     start_task: bool
 
 ################################################################
@@ -31,6 +32,7 @@ class State(TypedDict):
 
 class UserRequest_Schema(BaseModel):
     user_request: str = Field(description="Given the messages, what is the user's specific target or goal?")
+    email_query: str = Field(description="Convert the request into a concise Gmail search query. Remove conversational filler such as find, search, look for, emails about, related to, and please. Keep the meaningful topic words. Use Gmail operators such as from:, subject:, has:attachment, after:, before: when appropriate. Do not include explanations or quotes around the whole query.")
 
 class StartTask_Schema(BaseModel):
     start_task: bool = Field(description="Return True if the user's request is completely clear and actionable, False otherwise.")
@@ -59,13 +61,22 @@ def ask_question(state: State):
     return {"messages": [message]}
 
 def extract_task(state: State):
-    """Node 3: Extracts the final task and notifies the user."""
+    """Extract the user's goal and the Gmail query the scanner should run."""
+    instructions = SystemMessage(content=(
+        "Extract the email search request from this conversation. Return a concise Gmail query "
+        "that searches the user's intended topic. Remove filler such as 'find emails about' and "
+        "keep the meaningful terms. For example, turn 'find visa paperwork emails' into "
+        "'visa paperwork', and preserve explicit constraints such as sender, subject, date, or "
+        "attachments. If the request is broad but actionable, keep the broad topic. Return only "
+        "structured fields."
+    ))
     schema_llm = llm.with_structured_output(UserRequest_Schema)
-    result = schema_llm.invoke(state["messages"])
+    result = schema_llm.invoke([instructions] + state["messages"])
     
     return {
         "messages": [AIMessage(content="STARTING TASK!...................")],
-        "user_request": result.user_request # Accessing the Pydantic attribute
+        "user_request": result.user_request,
+        "email_query": result.email_query,
     }
 
 ################################################################
@@ -102,33 +113,3 @@ def build_chat_agent():
     return graph.compile()
 
 graph = build_chat_agent()
-
-################################################################
-# 6. External Chat Loop                                         #
-################################################################
-
-# Keep track of the history outside the graph
-chat_history = []
-start_task = False
-
-print("Agent: Hello! I can help you plan your travel or paperwork. What do you need?")
-
-while not start_task:
-    user_input = input("\nYou: ")
-    
-    # Convert input to a HumanMessage and add it to our running history
-    chat_history.append(HumanMessage(content=user_input))
-    
-    # Pass the ENTIRE history into the graph so it remembers context
-    result = graph.invoke({"messages": chat_history})
-    
-    # Print the latest AI response
-    latest_ai_msg = result["messages"][-1].content
-    print(f"Agent: {latest_ai_msg}")
-    
-    # Update our variables for the next loop
-    chat_history = result["messages"]
-    start_task = result.get("start_task", False)
-
-print("\n--- FINAL RESULT ---")
-print(f"Extracted Goal: {result.get('user_request')}")

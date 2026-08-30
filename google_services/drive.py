@@ -1,4 +1,5 @@
 import io
+from typing import Optional
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 from googleapiclient.http import MediaFileUpload
 from google_services.setup import validate_user_and_build_service
@@ -9,31 +10,70 @@ SERVICE_NAME = 'drive'
 VERSION = 'v3'
 SERVICE_TOKEN = 'drive_token.json'
 
-def read_drive():
+def read_drive(query: Optional[str] = None):
     service = validate_user_and_build_service(SERVICE_NAME, SERVICE_TOKEN, SCOPES, VERSION)
-    
-    print('Fetching the first 10 files...')
-    # list() returns the files. We specify the fields we want to make the response lighter.
-    results = service.files().list(
-        pageSize=10, 
-        fields="nextPageToken, files(id, name, mimeType)"
-    ).execute()
-    
-    items = results.get('files', [])
+
+    items = []
+    page_token = None
+    while True:
+        results = service.files().list(
+            q=query or 'trashed = false',
+            pageSize=1000,
+            pageToken=page_token,
+            corpora='user',
+            includeItemsFromAllDrives=True,
+            supportsAllDrives=True,
+            orderBy='name_natural',
+            fields=(
+                'nextPageToken, files(id, name, mimeType, createdTime, modifiedTime, '
+                'size, md5Checksum, webViewLink, owners(displayName,emailAddress), '
+                'parents, trashed)'
+            ),
+        ).execute()
+        items.extend(results.get('files', []))
+        page_token = results.get('nextPageToken')
+        if not page_token:
+            break
 
     if not items:
         print('No files found.')
-    else:
-        for item in items:
-            print(f"{item['name']} ({item['id']}) - {item['mimeType']}")
-            
+
+    files_by_id = {item['id']: item for item in items}
+
+    def parent_path(file_id, seen=None):
+        seen = seen or set()
+        if file_id in seen:
+            return ''
+        seen.add(file_id)
+        item = files_by_id.get(file_id, {})
+        parent_id = (item.get('parents') or [None])[0]
+        if not parent_id:
+            return ''
+        parent = files_by_id.get(parent_id)
+        if parent is None:
+            return ''
+        ancestor_path = parent_path(parent_id, seen)
+        return f"{ancestor_path}/{parent['name']}" if ancestor_path else f"/{parent['name']}"
+
+    for item in items:
+        item['parent_ids'] = item.get('parents', [])
+        parent_id = (item.get('parents') or [None])[0]
+        parent = files_by_id.get(parent_id, {})
+        item['parent_name'] = parent.get('name', '')
+        item['parent_path'] = parent_path(item['id'])
+        item['owner_names'] = [owner.get('displayName', '') for owner in item.get('owners', [])]
+        item['owner_emails'] = [owner.get('emailAddress', '') for owner in item.get('owners', [])]
+        print(f"{item['name']} ({item['id']}) - {item['mimeType']} {item['parent_path']}")
+
     return items
 
-def create_drive_file(file_path, file_name, mime_type):
+def create_drive_file(file_path, file_name, mime_type, parent_id=None):
     service = validate_user_and_build_service(SERVICE_NAME, SERVICE_TOKEN, SCOPES, VERSION)
     
     # Metadata contains the name the file will have in Google Drive
     file_metadata = {'name': file_name}
+    if parent_id:
+        file_metadata['parents'] = [parent_id]
     
     # Media body contains the actual file from your local system
     media = MediaFileUpload(file_path, mimetype=mime_type)
@@ -46,6 +86,19 @@ def create_drive_file(file_path, file_name, mime_type):
     
     print(f"File created with ID: {file.get('id')}")
     return file
+
+
+def create_drive_folder(folder_name, parent_id=None):
+    service = validate_user_and_build_service(SERVICE_NAME, SERVICE_TOKEN, SCOPES, VERSION)
+    file_metadata = {
+        'name': folder_name,
+        'mimeType': 'application/vnd.google-apps.folder',
+    }
+    if parent_id:
+        file_metadata['parents'] = [parent_id]
+    folder = service.files().create(body=file_metadata, fields='id, name, webViewLink').execute()
+    print(f"Drive folder created: {folder.get('name')} ({folder.get('id')})")
+    return folder
 
 def edit_drive_file(file_id, new_name):
     service = validate_user_and_build_service(SERVICE_NAME, SERVICE_TOKEN, SCOPES, VERSION)
